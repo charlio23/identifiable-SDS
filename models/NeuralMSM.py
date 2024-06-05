@@ -6,16 +6,17 @@ from torch.autograd import Variable
 from torch.utils.data import TensorDataset, DataLoader
 
 from models.modules import MLP, CausalMLP
+from models.MSM import MSM
 from utils.benchmarks import benchmark_function_naive
 
-class MSM(nn.Module):
+class NeuralMSM(nn.Module, MSM):
 
     def __init__(self, num_states, obs_dim, hid_dim=8, device='cpu', lr=5e-3, causal=False, l1_penalty=0, l2_penalty=0, activation='cos', lag=1, gradient_clipping=None):
         
-        super().__init__()
+        # Parent initialisation
+        nn.Module.__init__(self)
+        MSM.__init__(self, num_states, obs_dim, device)
 
-        self.num_states = num_states
-        self.obs_dim = obs_dim
         self.causal = causal
         self.l1_penalty = l1_penalty
         self.l2_penalty = l2_penalty
@@ -23,22 +24,16 @@ class MSM(nn.Module):
         self.lag = lag
         self.gradient_clipping = gradient_clipping
         self.activation = activation
-        self.device = device
+        
         if not self.causal:
             self.transitions = nn.ModuleList([MLP(obs_dim*self.lag, obs_dim, hid_dim, activation) for _ in range(self.num_states)]).to(device)
         else:
             self.transitions = nn.ModuleList([CausalMLP(obs_dim, hid_dim, activation, num_lags=self.lag) for _ in range(self.num_states)]).to(device)
-        #self.pi = torch.nn.Parameter(torch.zeros(num_states).to(device))
-        self.pi = torch.ones(num_states).to(device)
-        self.pi /= torch.sum(self.pi)
 
         start_cov = 0.5
         self.covs = torch.nn.Parameter((torch.eye(self.obs_dim)[None,:,:]*start_cov).repeat(self.num_states,1,1).to(device))
         self.init_mean = torch.nn.Parameter((torch.rand(self.num_states, self.obs_dim*self.lag).to(device)-0.5)*2*10)
         self.init_cov = torch.nn.Parameter(((torch.rand(self.num_states,1,1)*torch.eye(self.obs_dim*self.lag)[None,:,:])*5).to(device))
-
-        self.Q = torch.ones(self.num_states, self.num_states).to(device)
-        self.Q /= torch.sum(self.Q, axis=1, keepdims=True)
 
 
         ## Scheduler and optimiser for NeuralMSM
@@ -58,45 +53,7 @@ class MSM(nn.Module):
         log_local_evidence_T = torch.cat([distribs[i].log_prob(obs[:,self.lag:,:])[:,:,None] for i in range(self.num_states)], dim=2)
         return torch.cat([log_local_evidence_1, log_local_evidence_T], dim=1)
 
-    def _forward(self, local_evidence):
-        N, T, _ = local_evidence.shape
-        log_Z = torch.zeros((N,T)).to(self.device)
-        log_alpha = torch.zeros((N, T, self.num_states)).to(self.device)
-        log_prob = local_evidence[:,0,:] + torch.log(self.pi)
-        log_Z[:,0] = torch.logsumexp(log_prob, dim=-1)
-        log_alpha[:,0,:] = log_prob - log_Z[:,0,None]
-        Q = (self.Q[None,None,:,:].expand(N,T,-1,-1)).transpose(2,3).log()
-        for t in range(1, T):
-            #log_prob = local_evidence[:,t,:] + torch.log(torch.matmul((Q.transpose(2,3))[:,t,:,:],alpha[:,t-1,:,None]))[:,:,0]
-            log_prob = torch.logsumexp(local_evidence[:,t,:, None] + Q[:,t,:,:] + log_alpha[:,t-1,None,:], dim=-1) 
-            
-            log_Z[:,t] = torch.logsumexp(log_prob, dim=-1)
-            log_alpha[:,t,:] = log_prob - log_Z[:,t,None]
-        return log_alpha, log_Z
-
-    def _backward(self, local_evidence, log_Z):
-        N, T, _ = local_evidence.shape
-        log_beta = torch.zeros((N, T, self.num_states)).to(self.device)
-        Q = (self.Q[None,None,:,:].expand(N,T,-1,-1)).log()
-        for t in reversed(range(1, T)):
-            #beta_ = torch.matmul(Q[:,t,:,:], (torch.exp(local_evidence[:,t,:])*beta[:,t,:])[:,:,None])[:,:,0]
-            beta_ = torch.logsumexp(Q[:,t,:,:] + local_evidence[:,t,None,:] + log_beta[:,t,None,:], axis=-1)
-            log_beta[:,t-1,:] = beta_ - log_Z[:,t,None]
-        return log_beta
-
-    def _compute_marginals(self, log_alpha, log_beta):
-        return (log_alpha + log_beta).exp().detach()
-
-    def _compute_paired_marginals(self, log_alpha, log_beta, log_evidence, log_Z):
-        B, T, _ = log_evidence.shape
-        #alpha_beta_evidence = torch.matmul(alpha[:,:T-1,:,None], (beta*torch.exp(log_evidence))[:,1:,None,:])
-        log_alpha_beta_evidence = log_alpha[:,:T-1,:,None] + log_beta[:,1:,None,:] + log_evidence[:,1:,None,:]
-        Q = (self.Q[None,None,:,:].expand(B,T,-1,-1)).log()
-        #paired_marginals = Q[:,1:,:,:]*(alpha_beta_evidence/torch.exp(log_Z[:,1:,None,None])).float()
-        log_paired_marginals = Q[:,1:,:,:] + log_alpha_beta_evidence - log_Z[:,1:,None,None]
-        return log_paired_marginals.exp().detach()
-
-    def _maximization(self, gamma, paired_marginals, local_evidence, u=None):
+    def _maximization(self, gamma, paired_marginals, local_evidence):
         N, *_ = gamma.shape
         self.optimizer.zero_grad()
         # p(z_t|z_t-1)
@@ -120,24 +77,9 @@ class MSM(nn.Module):
         with torch.no_grad():
             # HMM params
             self.gamma = gamma
-            self.pi = gamma[:,0,:].sum(dim=0)/N
+            #self.pi = gamma[:,0,:].sum(dim=0)/N
             N_jk = torch.sum(paired_marginals.reshape(-1,self.num_states, self.num_states), dim=0)+1e-6
             self.Q = N_jk/torch.sum(N_jk, dim=1, keepdims=True)
-
-    def LogLikelihood(self, gamma, paired_marginals, local_evidence, u=None):
-        N, T, _ = local_evidence.shape
-        # pi
-        log_pi = torch.log(self.pi)
-        log_pi[self.pi<1e-10] = 0
-        log_likeli = (gamma[:,0,:]*log_pi).sum()
-        # Q
-        log_Q = torch.log(self.Q)
-        log_Q = log_Q.expand(N,T,-1,-1)
-        log_likeli += (paired_marginals*log_Q[:,1:,:,:]).sum()
-        # Obs
-        log_likeli += (gamma*local_evidence).sum()
-
-        return log_likeli/N
 
     def fit(self, obs, num_epochs=100, verbose_path=None, batch_size=32, early_stopping=None, max_scheduling_steps=1):
         import sys

@@ -1,13 +1,17 @@
-import numpy as np
+import argparse
 import os
 import sys
-from scipy.special import logsumexp, comb
-from tqdm import tqdm
-import argparse
 
-#from HMM import sieve_hmm as sieve_poly
-#from HMM import calc_dist_params as calc_dist_params_poly
-from models.NeuralMSM import *
+import numpy as np
+from scipy.special import logsumexp, comb
+import torch
+from tqdm import tqdm
+
+
+from models.PolyMSM import sieve as sieve_poly
+from models.PolyMSM import calc_dist_params as calc_dist_params_poly
+from models.NeuralMSM import NeuralMSM
+from utils.benchmarks import benchmark_function_naive
 from utils.transitions import (get_trans_mat, func_cosine_with_sparsity, func_polynomial, 
     func_softplus_with_sparsity, sample_adj_mat)
 
@@ -90,19 +94,19 @@ def train(obs, params, device, restarts_num, data_type, degree=3):
         if T==10:
             batch_size=1000
         else:
-            batch_size = 100
+            batch_size = 1000
         best_model, log_likeli = sieve_poly(num_states, dim_obs, torch.from_numpy(obs), coefs=degree, device=args.device, batch_size=batch_size)
-        dist, _, _ = calc_dist_params_poly(best_model.means.cpu().float(), params, mode='naive', method='grid', degree=degree)
+        dist, _, _ = calc_dist_params_poly(best_model.means.cpu().float(), params, dim_obs, mode='naive', method='grid', degree=degree)
     else:
         learning_rate = 7e-3
         hid_dim = 8
         activation = 'softplus'
         if args.data_type=='cosine':
             activation='cos'
-        best_model = MSM(num_states, dim_obs, hid_dim=1, device=device, lr=1, causal=False, l1_penalty=0, l2_penalty=0, activation='cos')
+        best_model = NeuralMSM(num_states, dim_obs, hid_dim=1, device=device, lr=1, causal=False, l1_penalty=0, l2_penalty=0, activation='cos')
         best_log_likeli = -np.inf
 
-        batch_size = 100
+        batch_size = 1000
         num_its = 1000
         if T==10:
             batch_size=1000
@@ -114,8 +118,8 @@ def train(obs, params, device, restarts_num, data_type, degree=3):
         for i in range(restarts_num):
             ## Random restarts
             print("Restart", i)
-            model = MSM(num_states, dim_obs, hid_dim=hid_dim, device=device, lr=learning_rate, causal=True, l1_penalty=0, l2_penalty=0, activation=activation)
-            log_likeli, _, _ = model.fit(torch.from_numpy(obs), num_its, batch_size=batch_size, early_stopping=2, max_scheduling_steps=2)
+            model = NeuralMSM(num_states, dim_obs, hid_dim=hid_dim, device=device, lr=learning_rate, causal=True, l1_penalty=0, l2_penalty=0, activation=activation)
+            log_likeli, _, _ = model.fit(torch.from_numpy(obs), num_its, batch_size=batch_size, early_stopping=4, max_scheduling_steps=2)
             model.to('cpu')
             print(model.Q)
             dist, _ = benchmark_function_naive(model.transitions.cpu().float(), params, dim_obs, net=data_type)
