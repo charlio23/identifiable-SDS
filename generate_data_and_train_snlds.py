@@ -140,48 +140,46 @@ def train(path, num_states, dim_obs, dim_latent, T, data_size, sparsity_prob, da
         exp_name = 'inferred_params_N_{}_T_{}_dim_latent_{}_dim_obs_{}_state_{}_sparsity_{}_net_{}_seed_{}'.format(data_size,
                 T, dim_latent, dim_obs, num_states, sparsity_prob, data_type, seed)
     final_temperature = 1
-    scheduler_epochs = 1000
-    if args.images or args.dim_obs >= 50:
+
+    ## Hyperparameters (highly advisable to modify on data type and size)
+    ## In this configuration all the models use the temperature scheduling indicated in Appendix F.3
+    ## https://arxiv.org/abs/2305.15925
+    ## If the models runs into state collapse, we advise increasing the temperature and decay rate.
+    if args.images:
+        pre_train_check = 10
         init_temperature = 10
-        iter_update_temp = 100
-        iter_check_temp = 1100
-        if args.images:
-            pre_train_check = 5
-            iter_update_temp = 50
-            epoch_num = 200
-            learning_rate = 5e-4
-            scheduler_epochs = 80
-            decay_rate = 0.9
-        else:
-            pre_train_check = 300
-            iter_check_temp = 2000
-            epoch_num = 2000
-            learning_rate = 5e-4
-            decay_rate = 0.95
-    else:           
-        pre_train_check = 100
-        init_temperature = 5
         iter_update_temp = 50
-        iter_check_temp = 1000
-        epoch_num = 2000
-        learning_rate = 5e-3
+        iter_check_temp = 200
+        epoch_num = 200
+        learning_rate = 5e-4
+        gamma_decay = 0.8
+        scheduler_epochs = 80
+        decay_rate = 0.975
+    else:           
+        pre_train_check = 5
+        init_temperature = 10
+        iter_update_temp = 50
+        iter_check_temp = 200
+        epoch_num = 100
+        learning_rate = 5e-4
+        gamma_decay = 0.5
+        scheduler_epochs = 30
         decay_rate = 0.9
     
     for restart_num in range(args.restarts_num):
         best_elbo = -torch.inf
         if args.images:
             dataloader = DataLoader(dl, batch_size=32, shuffle=True)
-        elif dim_obs < 50:
-            dataloader = DataLoader(dl, batch_size=64, shuffle=True)
         else:
-            dataloader = DataLoader(dl, batch_size=500, shuffle=True)
+            dataloader = DataLoader(dl, batch_size=100, shuffle=True)
         model = VariationalSNLDS(dim_obs, dim_latent, 64, num_states, encoder_type='video' if images else 'recurent', device=device, annealing=False, inference='alpha', beta=0)
+        # Useful for setting a smaller transition network to avoid overfitting
         model.transitions = torch.nn.ModuleList([MLP(dim_latent, dim_latent, 16, 'cos') for _ in range(num_states)]).to(device).float()
 
         model.temperature = init_temperature
         
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_epochs, gamma=0.8)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_epochs, gamma=gamma_decay)
         iterations = 0
         model.beta = 0
         mse = 1e5
@@ -192,8 +190,6 @@ def train(path, num_states, dim_obs, dim_latent, T, data_size, sparsity_prob, da
                 break
             if epoch >= pre_train_check and epoch < scheduler_epochs:
                 model.beta = 1
-                model.Q.requires_grad_(False)
-                model.pi.requires_grad_(False)
             else:
                 model.Q.requires_grad_(True)
                 model.pi.requires_grad_(True)
