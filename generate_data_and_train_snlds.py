@@ -144,7 +144,7 @@ def train(path, num_states, dim_obs, dim_latent, T, data_size, sparsity_prob, da
     ## Hyperparameters (highly advisable to modify on data type and size)
     ## In this configuration all the models use the temperature scheduling indicated in Appendix F.3
     ## https://arxiv.org/abs/2305.15925
-    ## If the models runs into state collapse, we advise increasing the temperature and decay rate.
+    ## If the models run into state collapse, we advise increasing the temperature and decay rate.
     if args.images:
         pre_train_check = 10
         init_temperature = 10
