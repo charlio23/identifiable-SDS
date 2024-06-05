@@ -44,6 +44,13 @@ def func_softplus(x, features):
     result = np.dot(alphas,result[:,None])[:,0]
     return result
 
+def func_leaky_relu(x, features):
+    alphas, omegas, betas = features
+    result = np.matmul(omegas[None,:,:],x[:,:,None])[:,:,0]
+    result = result + betas[None,:]
+    result = np.maximum(0.2*result, result)
+    result = np.matmul(alphas[None,:,:],result[:,:,None])[:,:,0]
+    return result
 
 def func_cosine_with_sparsity(x, features):
     alphas, omegas, betas, adj_mat = features
