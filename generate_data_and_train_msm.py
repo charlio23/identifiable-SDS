@@ -24,6 +24,7 @@ def parse_args():
     parser.add_argument('--sparsity_prob', default=0.0, type=float, metavar='N', help='sparsity probability')
     parser.add_argument('--data_type', default='cosine', type=str, help='Type of data generated (cosine|poly)')
     parser.add_argument('--generate_data', action='store_true', help='Generate data and then train')
+    parser.add_argument('--no-train', action='store_true', help='Activate no train')
     parser.add_argument('--device', default='cuda:0', type=str, help='Device to use')
     parser.add_argument('--degree', default=3, type=int, metavar='N', help='degree of polynomial')
     parser.add_argument('--restarts_num', default=10, type=int, metavar='N', help='number of random restarts')
@@ -151,12 +152,13 @@ if __name__=="__main__":
         else:
             params = np.load('data/{}/params_N_{}_T_{}_dim_{}_state_{}_sparsity_{}_seed_{}.npy'.format(data_type,data_size,T, dim_obs, num_states, sparsity_prob, seed), allow_pickle=True).item()['arr']
             obs = np.load('data/{}/observations_train_N_{}_T_{}_dim_{}_state_{}_sparsity_{}_seed_{}.npy'.format(data_type,data_size,T, dim_obs, num_states, sparsity_prob, seed))
-        best_model, dist = train(obs, params, device, restarts_num, data_type, degree)
-        print(best_model.Q)
-        print("Best model dist:", dist.item())
-        sys.stdout.flush()
-        os.makedirs("results/{}/".format(data_type), exist_ok=True)
-        np.save("results/{}/inferred_params_N_{}_T_{}_dim_{}_state_{}_sparsity_{}_seed_{}.npy".format(data_type,data_size,T, dim_obs, num_states, sparsity_prob, seed), {'arr':best_model})
-        distances[k] = dist.item()
-        np.save("results/{}/distances_N_{}_T_{}_dim_{}_state_{}_sparsity_{}.npy".format(data_type,data_size,T, dim_obs, num_states, sparsity_prob), distances)
+        if not args.no_train:
+            best_model, dist = train(obs, params, device, restarts_num, data_type, degree)
+            print(best_model.Q)
+            print("Best model dist:", dist.item())
+            sys.stdout.flush()
+            os.makedirs("results/{}/".format(data_type), exist_ok=True)
+            np.save("results/{}/inferred_params_N_{}_T_{}_dim_{}_state_{}_sparsity_{}_seed_{}.npy".format(data_type,data_size,T, dim_obs, num_states, sparsity_prob, seed), {'arr':best_model})
+            distances[k] = dist.item()
+            np.save("results/{}/distances_N_{}_T_{}_dim_{}_state_{}_sparsity_{}.npy".format(data_type,data_size,T, dim_obs, num_states, sparsity_prob), distances)
         

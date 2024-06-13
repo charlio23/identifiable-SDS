@@ -145,6 +145,7 @@ def train(path, num_states, dim_obs, dim_latent, T, data_size, sparsity_prob, da
     ## In this configuration all the models use the temperature scheduling indicated in Appendix F.3
     ## https://arxiv.org/abs/2305.15925
     ## If the models runs into state collapse, we advise increasing the temperature and decay rate.
+    ## If the temperature is increased, it is advised to increase the scheduler_epochs to prevent fake convergence of Q
     if args.images:
         pre_train_check = 10
         init_temperature = 10
@@ -157,13 +158,13 @@ def train(path, num_states, dim_obs, dim_latent, T, data_size, sparsity_prob, da
         decay_rate = 0.975
     else:           
         pre_train_check = 5
-        init_temperature = 10
+        init_temperature = 5
         iter_update_temp = 50
-        iter_check_temp = 200
+        iter_check_temp = 1000
         epoch_num = 100
         learning_rate = 5e-4
         gamma_decay = 0.5
-        scheduler_epochs = 30
+        scheduler_epochs = 40
         decay_rate = 0.9
     
     for restart_num in range(args.restarts_num):
@@ -171,7 +172,7 @@ def train(path, num_states, dim_obs, dim_latent, T, data_size, sparsity_prob, da
         if args.images:
             dataloader = DataLoader(dl, batch_size=32, shuffle=True)
         else:
-            dataloader = DataLoader(dl, batch_size=100, shuffle=True)
+            dataloader = DataLoader(dl, batch_size=50, shuffle=True)
         model = VariationalSNLDS(dim_obs, dim_latent, 64, num_states, encoder_type='video' if images else 'recurent', device=device, annealing=False, inference='alpha', beta=0)
         # Useful for setting a smaller transition network to avoid overfitting
         model.transitions = torch.nn.ModuleList([MLP(dim_latent, dim_latent, 16, 'cos') for _ in range(num_states)]).to(device).float()
@@ -188,9 +189,12 @@ def train(path, num_states, dim_obs, dim_latent, T, data_size, sparsity_prob, da
         for epoch in range(0, epoch_num):
             if epoch >= pre_train_check and mse > 6e3:
                 break
-            if epoch >= pre_train_check and epoch < scheduler_epochs:
+            if epoch >= pre_train_check and epoch < scheduler_epochs//4:
                 model.beta = 1
-            else:
+                if args.images: # With images we will use high temperature annealing. No need for long warmups
+                    model.Q.requires_grad_(True)
+                    model.pi.requires_grad_(True)
+            elif epoch >= scheduler_epochs//4:
                 model.Q.requires_grad_(True)
                 model.pi.requires_grad_(True)
             end = time.time()
