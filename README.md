@@ -1,9 +1,11 @@
 # On the Identifiability of Switching Dynamical Systems
 
-[![ArXiv](https://img.shields.io/static/v1?label=arXiv&message=2305.15925&color=B31B1B)](https://arxiv.org/abs/2305.15925) [![Venue:NeurIPS 2021](https://img.shields.io/badge/Venue-ICML_2024-007CFF)](https://icml.cc)
+[![ArXiv](https://img.shields.io/static/v1?label=arXiv&message=2305.15925&color=B31B1B)](https://arxiv.org/abs/2305.15925) [![Venue:ICML 2024](https://img.shields.io/badge/Venue-ICML_2024-007CFF)](https://icml.cc)  [![Venue:CI4TS 2024](https://img.shields.io/badge/Venue-CI4TS@UAI_24-ebdb34)](https://sites.google.com/view/ci4ts2024/home)
 
-
-Source code for the ICML 2024 paper [On the identifiability of Switching Dynamical Systems](https://arxiv.org/abs/2305.15925).
+This repository contains source code for the following papers:
+- ICML 2024:  [On the identifiability of Switching Dynamical Systems](https://arxiv.org/abs/2305.15925).
+- CI4TS Workshop @ UAI 2024:  [Identifying Nonstationary Causal Structures with High-Order Markov Switching Models
+](https://arxiv.org/abs/2406.17698).
 
 ## Setup
 
