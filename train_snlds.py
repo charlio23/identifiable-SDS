@@ -3,6 +3,7 @@ import sys
 import time
 
 import numpy as np
+from sklearn.decomposition import PCA
 import torch
 from torch.autograd import Variable
 from torch.utils.data import DataLoader, TensorDataset
@@ -10,6 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from generate_data_and_train_snlds import save_checkpoint
 from models.modules import MLP
 from models.VariationalSNLDS import VariationalSNLDS
+from models.NeuralMSM import NeuralMSM
 
 # Data generation settings
 device = 'cuda:1'
@@ -30,15 +32,36 @@ gamma_decay = 0.5
 scheduler_epochs = 40
 
 path = 'data/latent_variables/obs_train_N_{}_T_{}_dim_latent_{}_dim_obs_{}_state_{}_sparsity_{}_net_{}_seed_{}.npy'.format(data_size,T, dim_latent, dim_obs, num_states, sparsity_prob, data_type, seed)
-dl = TensorDataset(torch.from_numpy(np.load(path)))
+obs = np.load(path)
+dl = TensorDataset(torch.from_numpy(obs))
 
 # Training for 10 restarts
-for restart_num in range(10):
+for restart_num in range(3):
+    best_elbo = -torch.inf
+    # We initialise the SDS with a linear PCA followed by the MSM (not used in  the paper)
+    best_log_likeli = -np.inf
+    obs_new = PCA(n_components=dim_latent).fit_transform(obs.reshape(-1, dim_obs)).reshape(-1,T,dim_latent)
+    for i in range(10):
+        ## Random restarts
+        print("MSM Restart", i)
+        model = NeuralMSM(num_states, dim_latent, hid_dim=16, device=device, lr=7e-3, causal=False, l1_penalty=0, l2_penalty=0, activation='cos')
+        log_likeli, _, _ = model.fit(torch.from_numpy(obs_new), 1000, batch_size=100, early_stopping=2, max_scheduling_steps=2)
+        model.to('cpu')
+        print(model.Q)
+        if best_log_likeli < log_likeli:
+            best_model = model
+            best_log_likeli = log_likeli
+            print("Best model is currently: LL:", best_log_likeli)
+        sys.stdout.flush()
     best_elbo = -torch.inf
     dataloader = DataLoader(dl, batch_size=50, shuffle=True)
     model = VariationalSNLDS(dim_obs, dim_latent, 64, num_states, encoder_type='recurent', device=device, annealing=False, inference='alpha', beta=0)
     # Useful for setting a smaller transition network to avoid overfitting
-    model.transitions = torch.nn.ModuleList([MLP(dim_latent, dim_latent, 16, 'cos') for _ in range(num_states)]).to(device).float()
+    model.transitions = best_model.transitions.to(device)
+    model.Q = torch.nn.Parameter(best_model.Q.log()).to(device)
+    model.pi = torch.nn.Parameter(best_model.pi.log().to(device))
+    model.init_cov = torch.nn.Parameter(best_model.init_cov.to(device))
+    model.init_mean = torch.nn.Parameter(best_model.init_mean.to(device))
     model.temperature = final_temperature
     model.beta = 0
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)

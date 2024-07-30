@@ -123,7 +123,7 @@ class NeuralMSM(nn.Module, MSM):
                     beta = self._backward(local_evidence, log_Z)
                     gamma = self._compute_marginals(alpha, beta)
                     paired_marginals = self._compute_paired_marginals(alpha, beta, local_evidence, log_Z)
-                    loglikeli = self.LogLikelihood(gamma,paired_marginals,local_evidence)
+                    loglikeli = log_Z.sum()/batch_size#self.LogLikelihood(gamma,paired_marginals,local_evidence)
                 self._maximization(gamma, paired_marginals, local_evidence)
                 if count%100 == 0:
                     loglikeli_list.append(loglikeli.cpu())
@@ -138,5 +138,5 @@ class NeuralMSM(nn.Module, MSM):
             beta = self._backward(local_evidence, log_Z)
             gamma = self._compute_marginals(alpha, beta)
             paired_marginals = self._compute_paired_marginals(alpha, beta, local_evidence, log_Z)
-            loglikeli = self.LogLikelihood(gamma,paired_marginals,local_evidence)
+            loglikeli = log_Z.sum()/batch_size#self.LogLikelihood(gamma,paired_marginals,local_evidence)
         return loglikeli, loglikeli_list, acc_list
