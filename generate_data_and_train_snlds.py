@@ -25,7 +25,7 @@ def save_checkpoint(state, filename='model'):
 def parse_args():
 
     parser = argparse.ArgumentParser(description='Ar-HMM Data Gen and train')
-    parser.add_argument('--seeds', default=[23], nargs="+", type=int, metavar='N', help='number of seeds (multiple seeds run multiple experiments)')
+    parser.add_argument('--seeds', default=[24], nargs="+", type=int, metavar='N', help='number of seeds (multiple seeds run multiple experiments)')
     parser.add_argument('--dim_obs', default=2, type=int, metavar='N', help='number of dimensions')
     parser.add_argument('--dim_latent', default=2, type=int, metavar='N', help='number of latent dimensions')
     parser.add_argument('--num_states', default=3, type=int, metavar='N', help='number of states')
