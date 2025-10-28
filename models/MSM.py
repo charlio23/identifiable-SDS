@@ -55,20 +55,14 @@ class MSM(ABC):
         log_paired_marginals = Q[:,1:,:,:] + log_alpha_beta_evidence - log_Z[:,1:,None,None]
         return log_paired_marginals.exp().detach()
 
-    def LogLikelihood(self, gamma, paired_marginals, local_evidence):
-        N, T, _ = local_evidence.shape
-        # pi
-        log_pi = torch.log(self.pi)
-        log_pi[self.pi<1e-10] = 0
-        log_likeli = (gamma[:,0,:]*log_pi).sum()
-        # Q
-        log_Q = torch.log(self.Q)
-        log_Q = log_Q.expand(N,T,-1,-1)
-        log_likeli += (paired_marginals*log_Q[:,1:,:,:]).sum()
-        # Obs
-        log_likeli += (gamma*local_evidence).sum()
+    def LogLikelihood(self, obs):
+        N, T, D = obs.shape
+        obs = obs.to(self.device)
+        with torch.no_grad():
+            local_evidence = self._compute_local_evidence(obs.to(self.device))
+            _, log_Z = self._forward(local_evidence)
 
-        return log_likeli/N
+        return log_Z.sum()/(N*T*D)
 
     @abstractmethod
     def _maximization(self):

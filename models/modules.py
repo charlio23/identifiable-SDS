@@ -16,6 +16,8 @@ class MLP(nn.Module):
             self.activation = f.tanh
         elif activation=='relu':
             self.activation = f.relu
+        elif activation=='gelu':
+            self.activation = f.gelu
         elif activation=='leakyrelu':
             self.activation = lambda x: f.leaky_relu(x, negative_slope=0.2)
         else:
